@@ -36,7 +36,7 @@ set.seed(1)
 Seriously linear models are the best part of statistics
 
 
-## nyc_airbnb
+## Model
 ```{r}
 data("nyc_airbnb")
 
@@ -61,6 +61,8 @@ summary(fit)
 summary(fit)$coef  ## coefficient table
 coef(fit)
 fitted.values(fit)
+
+## reference :Bronx
 ```
 
 
@@ -69,6 +71,9 @@ use broom:
 ```{r}
 fit %>% 
   broom::glance()
+
+## p-value from the F test, describing whether the full regression is significant
+
 
 
 fit %>% 
@@ -83,5 +88,168 @@ fit %>%
   mutate(term = str_replace(term, "^boro", "Boro: ")) %>%   ## replace.
 
   knitr::kable(digits = 3)
+```
+
+## Take a look at factors
+
+```{r}
+nyc_airbnb = 
+  nyc_airbnb %>% 
+  mutate(
+    boro = fct_infreq(boro), ## according to the frequency of factor
+    room_type = fct_infreq(room_type)
+  )
+```
+
+
+refit the model
+
+```{r}
+fit = lm(price ~ stars + boro, data = nyc_airbnb)
+
+fit %>% 
+  broom::tidy()   
+
+## reference: Manhattan
+```
+
+
+## Diagnostics
+
+The modelr package can be used to add residuals and fitted values to a dataframe.
+
+```{r}
+modelr::add_residuals(nyc_airbnb, fit) %>% 
+  ggplot(aes(x = boro, y = resid)) +
+  geom_violin() +
+  ylim(-500, 500)
+
+modelr::add_residuals(nyc_airbnb, fit) %>% 
+  ggplot(aes(x = stars, y = resid)) +
+  geom_point() 
+```
+
+```{r}
+modelr::add_predictions(nyc_airbnb, fit)
+```
+
+
+
+## Nesting
+
+```{r}
+
+fit_interaction = lm(price ~ stars * boro + room_type * boro, data = nyc_airbnb)
+summary(fit_interaction)
+
+fit_interaction %>% 
+  broom::tidy()
+```
+
+
+```{r}
+nyc_airbnb %>% 
+  filter( boro == "Brooklyn") %>% 
+  lm(price ~ stars + room_type, data = .) %>% 
+  broom::tidy()
+```
+
+
+Let's try  to map
+
+```{r}
+nyc_airbnb %>% 
+  nest(data = -boro) %>% 
+  mutate(
+    models = map(.x = data, ~lm(price ~ stars + room_type, data =.x)),
+    results = map(models, broom::tidy)
+  ) %>% 
+  select(boro, results) %>% 
+  unnest(results)
+
+```
+
+
+
+```{r}
+manhattan_nest_lm_result = 
+  nyc_airbnb %>% 
+  filter(boro == "Manhattan") %>% 
+  nest(data = -neighborhood) %>%  # exclude neighborhood  nest all data
+  mutate(
+    models = map(.x = data, ~lm(price ~ stars + room_type, data =.x)),
+    results = map(models, broom::tidy)
+  ) %>% 
+  select(neighborhood, results) %>% 
+  unnest(results)
+
+
+## for room type
+manhattan_nest_lm_result %>% 
+filter(str_detect(term, "room_type")) %>% 
+  ggplot(aes(x = neighborhood, y = estimate)) + 
+  geom_point() + 
+  facet_wrap(~term) + 
+  theme(axis.text.x = element_text(angle = 80, hjust = 1))  
+
+```
+
+
+```{r}
+nyc_airbnb %>% 
+  filter(neighborhood == "NoHo", room_type == "Shared room")
+```
+
+
+
+Mix model
+```{r}
+manhattan_airbnb =
+  nyc_airbnb %>% 
+  filter(boro == "Manhattan")
+
+manhattan_airbnb %>% 
+  lme4::lmer(price ~ stars + room_type + (1 + room_type | neighborhood), data = .) %>% 
+  broom::tidy()
+```
+
+
+
+
+
+## Binary
+
+
+```{r}
+baltimore_df = 
+  read_csv("data/homicide-data.csv") %>% 
+  filter(city == "Baltimore") %>% 
+  mutate(
+    resolved = as.numeric(disposition == "Closed by arrest"),
+    victim_age = as.numeric(victim_age),
+    victim_race = fct_relevel(victim_race, "White")) %>% 
+  select(resolved, victim_age, victim_race, victim_sex)
+```
+
+
+
+```{r}
+fit_logistic = 
+  baltimore_df %>% 
+  glm(resolved ~ victim_age + victim_race + victim_sex, data = ., family = binomial())
+
+fit_logistic %>% 
+  broom::tidy() %>% 
+  mutate(OR = exp(estimate)) %>%
+  select(term, log_OR = estimate, OR, p.value) %>% 
+  knitr::kable(digits = 3)
+```
+
+
+
+```{r}
+baltimore_df %>% 
+  modelr::add_predictions(fit_logistic) %>% 
+  mutate(fitted_prob = boot::inv.logit(pred))
 ```
 
