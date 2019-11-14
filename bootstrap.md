@@ -190,3 +190,153 @@ bootstrap_results %>%
     ## 2 x           0.101
 
 se is too low\!
+
+use package
+
+``` r
+sim_df_nonconst %>% 
+  modelr::bootstrap(n = 1000) %>% 
+  mutate(
+    models = map(strap,~ lm(y ~ x, data = .x)),
+    results = map(models,broom::tidy)
+  ) %>% 
+  select(-strap,-models) %>% 
+  unnest(results)
+```
+
+    ## # A tibble: 2,000 x 6
+    ##    .id   term        estimate std.error statistic   p.value
+    ##    <chr> <chr>          <dbl>     <dbl>     <dbl>     <dbl>
+    ##  1 0001  (Intercept)     1.90    0.101       18.8 1.05e- 49
+    ##  2 0001  x               3.11    0.0774      40.2 1.27e-110
+    ##  3 0002  (Intercept)     1.87    0.0944      19.8 5.17e- 53
+    ##  4 0002  x               3.24    0.0667      48.6 1.13e-128
+    ##  5 0003  (Intercept)     2.01    0.115       17.5 2.87e- 45
+    ##  6 0003  x               2.96    0.0776      38.1 1.38e-105
+    ##  7 0004  (Intercept)     1.91    0.114       16.7 1.31e- 42
+    ##  8 0004  x               3.12    0.0818      38.1 1.03e-105
+    ##  9 0005  (Intercept)     1.92    0.109       17.7 8.68e- 46
+    ## 10 0005  x               3.05    0.0748      40.8 4.45e-112
+    ## # … with 1,990 more rows
+
+``` r
+boot_straps$strap[[1]]
+```
+
+    ## NULL
+
+``` r
+## <resample [250 x 3]> 8, 132, 69, 225, 180, 122, 34, 170, 216, 122, ...
+as_data_frame(boot_straps$strap[[1]])
+```
+
+    ## # A tibble: 0 x 0
+
+``` r
+sim_df_nonconst %>% 
+  lm(y ~ x, data = . ) %>% 
+  broom::tidy() 
+```
+
+    ## # A tibble: 2 x 5
+    ##   term        estimate std.error statistic   p.value
+    ##   <chr>          <dbl>     <dbl>     <dbl>     <dbl>
+    ## 1 (Intercept)     1.93    0.105       18.5 1.88e- 48
+    ## 2 x               3.11    0.0747      41.7 5.76e-114
+
+``` r
+sim_df_nonconst %>% 
+  modelr::bootstrap(n = 1000) %>% 
+  mutate(
+    models = map(strap,~lm(y ~ x, data = .x)),
+    results = map(models,broom::tidy)
+  ) %>% 
+  select(-strap,-models) %>% 
+  unnest(results) %>% 
+  group_by(term) %>% 
+  summarise(boot_se = sd(estimate))
+```
+
+    ## # A tibble: 2 x 2
+    ##   term        boot_se
+    ##   <chr>         <dbl>
+    ## 1 (Intercept)  0.0793
+    ## 2 x            0.104
+
+check for const
+
+``` r
+sim_df_const %>% 
+  lm(y ~ x, data = . ) %>% 
+  broom::tidy() 
+```
+
+    ## # A tibble: 2 x 5
+    ##   term        estimate std.error statistic   p.value
+    ##   <chr>          <dbl>     <dbl>     <dbl>     <dbl>
+    ## 1 (Intercept)     1.98    0.0981      20.2 3.65e- 54
+    ## 2 x               3.04    0.0699      43.5 3.84e-118
+
+``` r
+sim_df_const %>% 
+  modelr::bootstrap(n = 1000) %>% 
+  mutate(models = map(strap, ~lm(y ~ x, data = .x) ),
+         results = map(models, broom::tidy)) %>% 
+  select(-strap, -models) %>% 
+  unnest(results) %>% 
+  group_by(term) %>% 
+  summarize(boot_se = sd(estimate))
+```
+
+    ## # A tibble: 2 x 2
+    ##   term        boot_se
+    ##   <chr>         <dbl>
+    ## 1 (Intercept)  0.101 
+    ## 2 x            0.0735
+
+## Airbnb
+
+``` r
+data("nyc_airbnb")
+
+nyc_airbnb = 
+  nyc_airbnb %>% 
+  mutate(stars = review_scores_location / 2) %>% 
+  rename(
+    boro = neighbourhood_group,
+    neighborhood = neighbourhood) %>% 
+  filter(boro != "Staten Island") %>% 
+  select(price, stars, boro, neighborhood, room_type)
+```
+
+``` r
+nyc_airbnb %>% 
+  ggplot(aes(x = stars, y = price, color = room_type)) + 
+  geom_point() 
+```
+
+<img src="bootstrap_files/figure-gfm/unnamed-chunk-15-1.png" width="90%" />
+
+``` r
+airbnb_results = 
+ nyc_airbnb %>% 
+  filter(boro == "Manhattan") %>% 
+  modelr::bootstrap(n = 1000) %>% 
+  mutate(
+    models = map(strap, ~ lm(price ~ stars + room_type, data = .x)),
+    results = map(models, broom::tidy)) %>% 
+  select(results) %>% 
+  unnest(results)
+```
+
+Make a plot of the `stars`
+
+``` r
+airbnb_results %>% 
+  filter(term == "stars") %>% 
+  ggplot(aes(x = estimate)) + geom_density()
+```
+
+<img src="bootstrap_files/figure-gfm/unnamed-chunk-17-1.png" width="90%" />
+
+Skew\!
